@@ -1,0 +1,96 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Choose the mailbox to watch",
+        "description": "Admin Inbox turns bills, renewals, appointments and expiry notices arriving by email into structured household obligations, gated behind your review. Pick the IMAP account it should watch. One Admin Inbox instance watches exactly one IMAP account.",
+        "data": {
+          "imap_entry_id": "IMAP account"
+        }
+      },
+      "ai_task": {
+        "title": "Choose the AI Task entity",
+        "description": "Pick the AI Task entity that will extract structured data from emails. It is called with no tools and no LLM API access.",
+        "data": {
+          "ai_task_entity_id": "AI Task entity"
+        }
+      },
+      "filters": {
+        "title": "Optional filtering",
+        "description": "Optionally restrict which emails are ever sent to the model. One entry per line. Leave blank to process everything arriving in the watched mailbox.",
+        "data": {
+          "sender_allowlist": "Sender allowlist (email address or @domain, one per line)",
+          "keywords": "Keywords (subject/body substring or regex, one per line)"
+        }
+      }
+    },
+    "abort": {
+      "no_imap_entries_available": "No available IMAP config entries found. Set up the IMAP integration first, or every IMAP entry already has an Admin Inbox instance.",
+      "no_ai_task_entities_available": "No AI Task entities found. Set up an AI Task-capable integration first.",
+      "already_configured": "This IMAP account is already configured."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Admin Inbox options",
+        "data": {
+          "ai_task_entity_id": "AI Task entity",
+          "sender_allowlist": "Sender allowlist (email address or @domain, one per line)",
+          "keywords": "Keywords (subject/body substring or regex, one per line)",
+          "retention_days": "Retention (days) for confirmed/rejected items",
+          "dedup_prune_days": "Prune dedup-only records after (days)",
+          "reconcile_interval_minutes": "Reconciliation interval (minutes)",
+          "fetch_failure_threshold": "Fetch failures in 24h before raising a repair issue",
+          "due_date_past_years": "Reject dates more than this many years in the past",
+          "due_date_future_years": "Reject dates more than this many years in the future"
+        }
+      }
+    }
+  },
+  "entity": {
+    "todo": {
+      "needs_review": {
+        "name": "Needs review"
+      }
+    },
+    "calendar": {
+      "household_obligations": {
+        "name": "Household obligations"
+      }
+    },
+    "sensor": {
+      "next_due": {
+        "name": "Next due date"
+      },
+      "amount_due_30d": {
+        "name": "Amount due (30 days)"
+      },
+      "pending_review": {
+        "name": "Pending review count"
+      }
+    }
+  },
+  "issues": {
+    "store_unavailable": {
+      "title": "Admin Inbox storage is unavailable",
+      "description": "Admin Inbox could not read or write its storage file (disk full or corrupted). Processing has stopped until Home Assistant is restarted or the entry reloaded after the underlying problem is fixed."
+    },
+    "store_schema_unsupported": {
+      "title": "Admin Inbox storage schema is newer than this version supports",
+      "description": "The stored data was written by a newer version of Admin Inbox than is currently installed (for example, after a downgrade). Update the integration, or restore a compatible storage file, before Admin Inbox can run again."
+    },
+    "ai_task_entity_missing": {
+      "title": "Admin Inbox's configured AI Task entity ({entity_id}) is unavailable",
+      "description": "Admin Inbox cannot extract data from emails until this is fixed. Check that the AI Task integration is set up and the entity still exists, then reconfigure Admin Inbox if it was renamed or removed."
+    },
+    "imap_fetch_degraded": {
+      "title": "Admin Inbox is seeing repeated IMAP fetch failures",
+      "description": "Several email fetches have failed in the last 24 hours for entry {entry_id}. This usually indicates an IMAP-side problem (authentication, folder permissions, or connectivity) outside Admin Inbox's control. Check the IMAP integration's status."
+    },
+    "imap_entry_removed": {
+      "title": "Admin Inbox's IMAP account was removed",
+      "description": "The IMAP config entry ({imap_entry_id}) this Admin Inbox instance depends on no longer exists. Remove this Admin Inbox instance, or restore the IMAP account."
+    }
+  }
+}
