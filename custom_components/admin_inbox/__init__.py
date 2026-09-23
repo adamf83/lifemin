@@ -12,11 +12,14 @@ from homeassistant.helpers import issue_registry as ir
 from homeassistant.helpers.event import async_track_time_change, async_track_time_interval
 from homeassistant.util import dt as dt_util
 
+from . import webhook_listener
 from .const import (
     ATTR_ENTRY_ID,
     ATTR_ITEM_ID,
     CONF_IMAP_ENTRY_ID,
     CONF_RECONCILE_INTERVAL_MINUTES,
+    CONF_SOURCE_TYPE,
+    CONF_WEBHOOK_ID,
     DEFAULT_RECONCILE_INTERVAL_MINUTES,
     DOMAIN,
     ISSUE_STORE_SCHEMA_UNSUPPORTED,
@@ -25,6 +28,8 @@ from .const import (
     SERVICE_CONFIRM_ITEM,
     SERVICE_RECONCILE,
     SERVICE_REJECT_ITEM,
+    SOURCE_TYPE_IMAP,
+    SOURCE_TYPE_WEBHOOK,
 )
 from .coordinator import AdminInboxCoordinator
 from .listener import AdminInboxListener
@@ -76,12 +81,25 @@ async def async_setup_entry(hass: HomeAssistant, entry: AdminInboxConfigEntry) -
 
     pipeline = AdminInboxPipeline(hass, entry, store, coordinator.signal_update)
 
-    imap_entry_id = entry.data[CONF_IMAP_ENTRY_ID]
-    listener = AdminInboxListener(hass, imap_entry_id, pipeline.async_handle_fetch_request)
-    listener.async_start()
+    source_type = entry.data.get(CONF_SOURCE_TYPE, SOURCE_TYPE_IMAP)
+    listener: AdminInboxListener | None = None
+    webhook_id: str | None = None
+    if source_type == SOURCE_TYPE_WEBHOOK:
+        webhook_id = entry.data[CONF_WEBHOOK_ID]
+        webhook_listener.async_register(hass, entry.entry_id, webhook_id, pipeline)
+        entry.async_on_unload(lambda: webhook_listener.async_unregister(hass, webhook_id))
+    else:
+        imap_entry_id = entry.data[CONF_IMAP_ENTRY_ID]
+        listener = AdminInboxListener(hass, imap_entry_id, pipeline.async_handle_fetch_request)
+        listener.async_start()
+        entry.async_on_unload(listener.async_stop)
 
     entry.runtime_data = AdminInboxRuntimeData(
-        store=store, coordinator=coordinator, pipeline=pipeline, listener=listener
+        store=store,
+        coordinator=coordinator,
+        pipeline=pipeline,
+        listener=listener,
+        webhook_id=webhook_id,
     )
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
@@ -107,7 +125,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: AdminInboxConfigEntry) -
     entry.async_on_unload(
         async_track_time_change(hass, _async_daily_due_check, hour=0, minute=5, second=0)
     )
-    entry.async_on_unload(listener.async_stop)
 
     _async_register_services(hass)
 

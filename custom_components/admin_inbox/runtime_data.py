@@ -16,7 +16,9 @@ class AdminInboxRuntimeData:
     store: AdminInboxStore
     coordinator: AdminInboxCoordinator
     pipeline: AdminInboxPipeline
-    listener: AdminInboxListener
+    # Exactly one of these two is set, matching the entry's source_type.
+    listener: AdminInboxListener | None = None
+    webhook_id: str | None = None
 
 
 type AdminInboxConfigEntry = ConfigEntry[AdminInboxRuntimeData]

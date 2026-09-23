@@ -14,11 +14,23 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import issue_registry as ir
 
-from .const import CONF_IMAP_ENTRY_ID, DOMAIN, ISSUE_IMAP_ENTRY_REMOVED
+from .const import (
+    CONF_IMAP_ENTRY_ID,
+    CONF_SOURCE_TYPE,
+    DOMAIN,
+    ISSUE_IMAP_ENTRY_REMOVED,
+    SOURCE_TYPE_IMAP,
+)
 
 
 def async_check_imap_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
-    """Raise/clear the imap_entry_removed issue. Returns True if the IMAP entry is missing."""
+    """Raise/clear the imap_entry_removed issue. Returns True if the IMAP entry is missing.
+
+    A no-op for webhook-sourced entries, which have no IMAP entry to check.
+    """
+    if entry.data.get(CONF_SOURCE_TYPE, SOURCE_TYPE_IMAP) != SOURCE_TYPE_IMAP:
+        return False
+
     imap_entry_id = entry.data.get(CONF_IMAP_ENTRY_ID)
     imap_entry = hass.config_entries.async_get_entry(imap_entry_id) if imap_entry_id else None
 

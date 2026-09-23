@@ -59,10 +59,41 @@ pytest tests/ -v
 
 Per-stage unit tests (`test_prefilter.py`, `test_extractor.py`,
 `test_validator.py`, `test_store.py`) exercise one module directly with
-constructed objects. `test_pipeline.py` is the only end-to-end test (fires
-a real `imap_content` event through the full stack into a `todo` item).
+constructed objects. `test_pipeline.py` is the IMAP-source end-to-end test
+(fires a real `imap_content` event through the full stack into a `todo`
+item); `test_webhook.py` is its webhook-source counterpart (POSTs to the
+registered webhook via the `hass_client_no_auth` fixture instead).
 `test_config_flow.py`, `test_calendar.py`, `test_todo.py`, `test_sensor.py`,
 `test_repairs.py` are entity/flow-level tests. `tests/helpers.py` holds
-shared setup helpers used by the entity-rendering tests;
-`tests/conftest.py` holds the `FakeAITaskEntity` and mock-IMAP-entry
-fixtures used everywhere.
+shared setup helpers used by the entity-rendering tests
+(`async_setup_admin_inbox` for IMAP source, `async_setup_admin_inbox_webhook`
+for webhook source); `tests/conftest.py` holds the `FakeAITaskEntity` and
+mock-IMAP-entry fixtures used everywhere.
+
+## Mail source: IMAP vs webhook
+
+There are two mail sources, chosen once at config-flow time
+(`CONF_SOURCE_TYPE`, `imap` | `webhook`) and never changed in place — see
+`PLAN.md` section 1a for the full rationale (Microsoft 365 retired Basic
+Auth IMAP, which is all HA's core `imap` integration supports).
+
+- `listener.py` (IMAP: subscribes to `imap_content` bus events) and
+  `webhook_listener.py` (webhook: registers a HA webhook, parses the
+  POSTed JSON body) are the two entry points. Both end up calling into
+  `pipeline.py`: `async_handle_fetch_request` (IMAP, fetches the body via
+  `imap.fetch` first) or `async_handle_pushed_email` (webhook, body
+  already provided). Both converge on the same
+  `pipeline._async_process_fetched` (prefilter → extract → validate →
+  review queue) — don't duplicate that logic when touching either path.
+- `__init__.py`'s `async_setup_entry` branches on `CONF_SOURCE_TYPE` to
+  decide which of `listener`/`webhook_id` on `AdminInboxRuntimeData` gets
+  set (the other stays `None`) — don't assume `runtime_data.listener` is
+  always present.
+- Reconciliation (`pipeline.async_reconcile`) only retries IMAP-sourced
+  stuck items (it can re-fetch a uid); a stuck webhook-sourced item has no
+  payload to retry with and is marked terminal instead.
+- `repairs.async_check_imap_entry` is a no-op for webhook-sourced entries.
+- The webhook URL is only shown to the user twice: once at the end of the
+  config flow (`webhook_confirm` step), and persistently in the options
+  flow's `init` step description. Don't add a third mechanism without
+  checking whether one of these already covers the need.

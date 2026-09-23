@@ -4,6 +4,7 @@ from __future__ import annotations
 from typing import Any
 
 import voluptuous as vol
+from homeassistant.components import webhook
 from homeassistant.config_entries import (
     ConfigEntry,
     ConfigEntryState,
@@ -24,6 +25,8 @@ from .const import (
     CONF_RECONCILE_INTERVAL_MINUTES,
     CONF_RETENTION_DAYS,
     CONF_SENDER_ALLOWLIST,
+    CONF_SOURCE_TYPE,
+    CONF_WEBHOOK_ID,
     DEFAULT_DEDUP_PRUNE_DAYS,
     DEFAULT_DUE_DATE_FUTURE_YEARS,
     DEFAULT_DUE_DATE_PAST_YEARS,
@@ -31,6 +34,9 @@ from .const import (
     DEFAULT_RECONCILE_INTERVAL_MINUTES,
     DEFAULT_RETENTION_DAYS,
     DOMAIN,
+    SOURCE_TYPE_IMAP,
+    SOURCE_TYPE_WEBHOOK,
+    SOURCE_TYPES,
 )
 
 
@@ -50,7 +56,9 @@ def _available_imap_entries(hass, exclude_configured: bool) -> dict[str, str]:
     ]
     if exclude_configured:
         already_used = {
-            e.data[CONF_IMAP_ENTRY_ID] for e in hass.config_entries.async_entries(DOMAIN)
+            e.data[CONF_IMAP_ENTRY_ID]
+            for e in hass.config_entries.async_entries(DOMAIN)
+            if e.data.get(CONF_SOURCE_TYPE, SOURCE_TYPE_IMAP) == SOURCE_TYPE_IMAP
         }
         imap_entries = [e for e in imap_entries if e.entry_id not in already_used]
     return {e.entry_id: e.title for e in imap_entries}
@@ -66,26 +74,42 @@ class AdminInboxConfigFlow(ConfigFlow, domain=DOMAIN):
     VERSION = 1
 
     def __init__(self) -> None:
+        self._source_type: str | None = None
         self._imap_entry_id: str | None = None
+        self._webhook_id: str | None = None
         self._ai_task_entity_id: str | None = None
+        self._sender_allowlist: list[str] = []
+        self._keywords: list[str] = []
 
     async def async_step_user(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
-        errors: dict[str, str] = {}
+        if user_input is not None:
+            self._source_type = user_input[CONF_SOURCE_TYPE]
+            if self._source_type == SOURCE_TYPE_WEBHOOK:
+                return await self.async_step_ai_task()
+            return await self.async_step_imap()
+
+        return self.async_show_form(
+            step_id="user",
+            data_schema=vol.Schema(
+                {vol.Required(CONF_SOURCE_TYPE, default=SOURCE_TYPE_IMAP): vol.In(SOURCE_TYPES)}
+            ),
+        )
+
+    async def async_step_imap(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
         available = _available_imap_entries(self.hass, exclude_configured=True)
         if not available:
             return self.async_abort(reason="no_imap_entries_available")
 
         if user_input is not None:
             imap_entry_id = user_input[CONF_IMAP_ENTRY_ID]
-            await self.async_set_unique_id(imap_entry_id)
+            await self.async_set_unique_id(f"{SOURCE_TYPE_IMAP}:{imap_entry_id}")
             self._abort_if_unique_id_configured()
             self._imap_entry_id = imap_entry_id
             return await self.async_step_ai_task()
 
         return self.async_show_form(
-            step_id="user",
+            step_id="imap",
             data_schema=vol.Schema({vol.Required(CONF_IMAP_ENTRY_ID): vol.In(available)}),
-            errors=errors,
         )
 
     async def async_step_ai_task(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
@@ -104,20 +128,14 @@ class AdminInboxConfigFlow(ConfigFlow, domain=DOMAIN):
 
     async def async_step_filters(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
         if user_input is not None:
-            assert self._imap_entry_id is not None
-            imap_entry = self.hass.config_entries.async_get_entry(self._imap_entry_id)
-            title = f"Admin Inbox ({imap_entry.title if imap_entry else self._imap_entry_id})"
-            return self.async_create_entry(
-                title=title,
-                data={
-                    CONF_IMAP_ENTRY_ID: self._imap_entry_id,
-                    CONF_AI_TASK_ENTITY_ID: self._ai_task_entity_id,
-                },
-                options={
-                    CONF_SENDER_ALLOWLIST: _parse_list(user_input.get(CONF_SENDER_ALLOWLIST, "")),
-                    CONF_KEYWORDS: _parse_list(user_input.get(CONF_KEYWORDS, "")),
-                },
-            )
+            self._sender_allowlist = _parse_list(user_input.get(CONF_SENDER_ALLOWLIST, ""))
+            self._keywords = _parse_list(user_input.get(CONF_KEYWORDS, ""))
+            if self._source_type == SOURCE_TYPE_WEBHOOK:
+                self._webhook_id = webhook.async_generate_id()
+                await self.async_set_unique_id(f"{SOURCE_TYPE_WEBHOOK}:{self._webhook_id}")
+                self._abort_if_unique_id_configured()
+                return await self.async_step_webhook_confirm()
+            return self._async_create_admin_inbox_entry()
 
         return self.async_show_form(
             step_id="filters",
@@ -129,6 +147,50 @@ class AdminInboxConfigFlow(ConfigFlow, domain=DOMAIN):
             ),
         )
 
+    async def async_step_webhook_confirm(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Show the webhook URL to paste into the external automation (e.g. Power Automate)."""
+        if user_input is not None:
+            return self._async_create_admin_inbox_entry()
+
+        assert self._webhook_id is not None
+        webhook_url = webhook.async_generate_url(self.hass, self._webhook_id)
+        return self.async_show_form(
+            step_id="webhook_confirm",
+            data_schema=vol.Schema({}),
+            description_placeholders={"webhook_url": webhook_url},
+        )
+
+    @callback
+    def _async_create_admin_inbox_entry(self) -> ConfigFlowResult:
+        if self._source_type == SOURCE_TYPE_WEBHOOK:
+            assert self._webhook_id is not None
+            title = "Admin Inbox (Webhook)"
+            data = {
+                CONF_SOURCE_TYPE: SOURCE_TYPE_WEBHOOK,
+                CONF_WEBHOOK_ID: self._webhook_id,
+                CONF_AI_TASK_ENTITY_ID: self._ai_task_entity_id,
+            }
+        else:
+            assert self._imap_entry_id is not None
+            imap_entry = self.hass.config_entries.async_get_entry(self._imap_entry_id)
+            title = f"Admin Inbox ({imap_entry.title if imap_entry else self._imap_entry_id})"
+            data = {
+                CONF_SOURCE_TYPE: SOURCE_TYPE_IMAP,
+                CONF_IMAP_ENTRY_ID: self._imap_entry_id,
+                CONF_AI_TASK_ENTITY_ID: self._ai_task_entity_id,
+            }
+
+        return self.async_create_entry(
+            title=title,
+            data=data,
+            options={
+                CONF_SENDER_ALLOWLIST: self._sender_allowlist,
+                CONF_KEYWORDS: self._keywords,
+            },
+        )
+
     @staticmethod
     @callback
     def async_get_options_flow(config_entry: ConfigEntry) -> AdminInboxOptionsFlow:
@@ -136,7 +198,12 @@ class AdminInboxConfigFlow(ConfigFlow, domain=DOMAIN):
 
 
 class AdminInboxOptionsFlow(OptionsFlow):
-    """Options flow: edit AI Task entity, allowlist, keywords, and advanced tuning."""
+    """Options flow: edit AI Task entity, allowlist, keywords, and advanced tuning.
+
+    Source type (IMAP vs webhook) is not editable here -- it's a structural
+    choice (different listener wiring entirely) made once at setup. Switch
+    it by removing and re-adding the integration.
+    """
 
     async def async_step_init(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
         entities = _available_ai_task_entities(self.hass)
@@ -179,8 +246,16 @@ class AdminInboxOptionsFlow(OptionsFlow):
             vol.In(entities) if entities else str
         )
 
+        if self.config_entry.data.get(CONF_SOURCE_TYPE) == SOURCE_TYPE_WEBHOOK:
+            webhook_id = self.config_entry.data[CONF_WEBHOOK_ID]
+            webhook_url = webhook.async_generate_url(self.hass, webhook_id)
+        else:
+            webhook_url = "Not applicable (this instance uses the IMAP source)."
+        description_placeholders = {"webhook_url": webhook_url}
+
         return self.async_show_form(
             step_id="init",
+            description_placeholders=description_placeholders,
             data_schema=vol.Schema(
                 {
                     vol.Required(

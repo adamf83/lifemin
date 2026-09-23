@@ -10,8 +10,14 @@ prompt-injection defenses, test strategy and milestone breakdown.
 
 ## What it does
 
-1. Watches one IMAP mailbox (via the built-in `imap` integration) for new
-   mail.
+1. Watches one mailbox for new mail, via either of two mail sources you
+   choose at setup (see [Mail source](#mail-source-imap-or-webhook)
+   below):
+   - **IMAP** — the built-in `imap` integration, for mailboxes it can log
+     into directly.
+   - **Webhook** — an external automation with its own access to the
+     mailbox pushes new mail to Admin Inbox. Needed for mailboxes IMAP
+     can't reach, notably **Microsoft 365 / Exchange Online**.
 2. Cheaply pre-filters by sender allowlist / keywords before anything is
    sent to a model.
 3. Sends the email body to an [AI Task](https://www.home-assistant.io/integrations/ai_task/)
@@ -45,30 +51,88 @@ Assistant `config/custom_components/` directory and restart.
 
 ## Setup
 
-Before adding this integration:
-
-1. Set up the **IMAP** integration for the mailbox you want watched.
-   Point it at a dedicated folder or label if you can (e.g. a Gmail
-   filter that labels bills/renewals/appointments) — the pre-filter
-   options below are a second line of defense, not a replacement for
-   pointing IMAP at the right folder.
-2. Set up an **AI Task**-capable integration (any provider — this
-   integration is provider-agnostic and never sends more than the single
-   email body being processed).
+Before adding this integration, set up an **AI Task**-capable integration
+(any provider — this integration is provider-agnostic and never sends
+more than the single email body being processed). Then decide which mail
+source applies to you — see the next section — and complete its
+prerequisite (an `imap` config entry, or nothing extra yet for webhook).
 
 Then, **Settings → Devices & Services → Add Integration → Admin Inbox**:
 
-1. Pick the IMAP config entry to watch. One Admin Inbox instance watches
-   exactly one mailbox — for two mailboxes, add the integration twice.
-2. Pick the AI Task entity to use for extraction.
-3. Optionally set a sender allowlist (email addresses or `@domain.com`)
+1. Choose the mail source: **IMAP** or **Webhook**.
+2. **IMAP** → pick the IMAP config entry to watch. **Webhook** → nothing
+   to pick here; a webhook URL is generated and shown to you at the end
+   of the flow (see below for how to wire it up).
+3. Pick the AI Task entity to use for extraction.
+4. Optionally set a sender allowlist (email addresses or `@domain.com`)
    and/or keywords (subject/body substrings or regexes). Leave both
-   blank to process everything arriving in the watched mailbox — a
-   deliberate "trust the folder" default, since the IMAP folder itself is
-   the primary filter.
+   blank to process everything arriving — a deliberate "trust the source"
+   default, since for IMAP the mailbox folder is the primary filter, and
+   for webhook it's whatever the external automation already decided to
+   forward.
 
-All of the above, plus retention and reconciliation tuning, can be
-changed later from the integration's **Configure** button.
+One Admin Inbox instance watches exactly one mail source — for two
+mailboxes, or a mix of IMAP and webhook, add the integration again for
+each. All of the above, plus retention and reconciliation tuning, can be
+changed later from the integration's **Configure** button (the mail
+source itself is fixed at setup — remove and re-add to change it).
+
+## Mail source: IMAP or webhook?
+
+**Use IMAP** if your mailbox is one the built-in `imap` integration can
+log into with a username and password (or app password) — most personal
+IMAP providers (Fastmail, most self-hosted mail, Gmail with an app
+password). Set up the **IMAP** integration first, pointed at a dedicated
+folder or label if you can (e.g. a filter that labels bills/renewals/
+appointments) — Admin Inbox's own allowlist/keyword filters are a second
+line of defense, not a replacement for pointing IMAP at the right folder.
+
+**Use Webhook** if IMAP login simply doesn't work for your mailbox — the
+main case is **Microsoft 365 / Exchange Online**, which retired
+Basic Auth (username+password) for IMAP entirely; HA's `imap` integration
+has no OAuth2/Modern Auth support, so there's no configuration fix for
+this — the mailbox is just unreachable over IMAP. The webhook source
+sidesteps it: an external automation with its own (OAuth-based) access to
+the mailbox pushes new mail to a URL Admin Inbox generates for you.
+
+### Wiring up Microsoft 365 via Power Automate
+
+This is the reference setup for the webhook source, using a first-party
+Microsoft tool that already has proper OAuth access to your mailbox —
+no app registration or token management needed on your end.
+
+1. In [Power Automate](https://make.powerautomate.com), create an
+   **Automated cloud flow**.
+2. Trigger: **Office 365 Outlook — When a new email arrives (V3)**.
+   Point it at the folder you want watched, same reasoning as the IMAP
+   folder advice above.
+3. (Optional but recommended) Add a **Html to text** action on the
+   trigger's `Body` output — extraction works better on plain text than
+   raw HTML.
+4. Add an **HTTP** action:
+   - Method: `POST`
+   - URI: the webhook URL Admin Inbox showed you at the end of its config
+     flow. Lost it? It's shown again (read-only) at the top of the
+     integration's **Configure** screen — it doesn't change.
+   - Headers: `Content-Type: application/json`
+   - Body:
+     ```json
+     {
+       "message_id": "@{triggerOutputs()?['body/Id']}",
+       "sender": "@{triggerOutputs()?['body/From']}",
+       "subject": "@{triggerOutputs()?['body/Subject']}",
+       "date": "@{triggerOutputs()?['body/DateTimeReceived']}",
+       "text": "@{body('Html_to_text')}"
+     }
+     ```
+     (swap the last line for `"text": "@{triggerOutputs()?['body/Body']}"` if
+     you skipped the Html-to-text step)
+5. Save and turn the flow on. `message_id` is required — Admin Inbox uses
+   it to deduplicate, and rejects (HTTP 400) any request missing it.
+
+Home Assistant must be reachable from Microsoft's cloud for this to work
+(Nabu Casa remote access or your own reverse proxy/port-forward with a
+valid certificate — a purely local-only HA instance can't receive this).
 
 ## Using it
 
@@ -107,17 +171,25 @@ changed later from the integration's **Configure** button.
   still exists (Settings → Devices & Services → Entities); if it was
   renamed or its integration reconfigured, update this integration's
   options to point at the new entity.
-- **A repair issue says IMAP fetch is degraded**: several email fetches
-  failed in the last 24 hours. This is almost always an IMAP-side issue
-  (auth, folder permissions, connectivity) — check the IMAP integration's
-  own status first.
-- **A repair issue says the IMAP account was removed**: the IMAP config
-  entry this instance depends on no longer exists. Remove this Admin
-  Inbox instance, or restore the IMAP account.
-- **Nothing shows up in Needs review**: check the pre-filter isn't too
-  strict (an empty allowlist/keyword list processes everything), and that
-  the IMAP integration is actually receiving `imap_content` events for
-  new mail (check its own logs/diagnostics first).
+- **A repair issue says IMAP fetch is degraded** (IMAP source only):
+  several email fetches failed in the last 24 hours. This is almost
+  always an IMAP-side issue (auth, folder permissions, connectivity) —
+  check the IMAP integration's own status first.
+- **A repair issue says the IMAP account was removed** (IMAP source
+  only): the IMAP config entry this instance depends on no longer exists.
+  Remove this Admin Inbox instance, or restore the IMAP account.
+- **Nothing shows up in Needs review, IMAP source**: check the pre-filter
+  isn't too strict (an empty allowlist/keyword list processes
+  everything), and that the IMAP integration is actually receiving
+  `imap_content` events for new mail (check its own logs/diagnostics
+  first).
+- **Nothing shows up in Needs review, webhook source**: check the
+  external automation is actually running (Power Automate's flow run
+  history shows every trigger and HTTP call, including failures) and
+  that the HTTP action got a `200` back — a `400` means the JSON body was
+  malformed or missing `message_id`; anything else (timeout, connection
+  refused) usually means Home Assistant isn't reachable from outside your
+  network.
 
 ## Development
 

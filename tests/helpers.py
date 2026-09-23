@@ -4,12 +4,21 @@ from __future__ import annotations
 from datetime import date
 from decimal import Decimal
 
+from homeassistant.components import webhook
 from homeassistant.core import HomeAssistant
 from homeassistant.util import dt as dt_util
 from homeassistant.util.ulid import ulid_now
 from pytest_homeassistant_custom_component.common import MockConfigEntry
 
-from custom_components.admin_inbox.const import CONF_AI_TASK_ENTITY_ID, CONF_IMAP_ENTRY_ID, DOMAIN
+from custom_components.admin_inbox.const import (
+    CONF_AI_TASK_ENTITY_ID,
+    CONF_IMAP_ENTRY_ID,
+    CONF_SOURCE_TYPE,
+    CONF_WEBHOOK_ID,
+    DOMAIN,
+    SOURCE_TYPE_IMAP,
+    SOURCE_TYPE_WEBHOOK,
+)
 from custom_components.admin_inbox.models import ItemState, MessageRef, StoredItem
 
 
@@ -19,7 +28,30 @@ async def async_setup_admin_inbox(
     entry = MockConfigEntry(
         domain=DOMAIN,
         title="Admin Inbox (Mail Test)",
-        data={CONF_IMAP_ENTRY_ID: imap_entry_id, CONF_AI_TASK_ENTITY_ID: ai_task_entity_id},
+        data={
+            CONF_SOURCE_TYPE: SOURCE_TYPE_IMAP,
+            CONF_IMAP_ENTRY_ID: imap_entry_id,
+            CONF_AI_TASK_ENTITY_ID: ai_task_entity_id,
+        },
+        options=options or {},
+    )
+    entry.add_to_hass(hass)
+    assert await hass.config_entries.async_setup(entry.entry_id)
+    await hass.async_block_till_done()
+    return entry
+
+
+async def async_setup_admin_inbox_webhook(
+    hass: HomeAssistant, *, ai_task_entity_id: str, options: dict | None = None
+) -> MockConfigEntry:
+    entry = MockConfigEntry(
+        domain=DOMAIN,
+        title="Admin Inbox (Webhook)",
+        data={
+            CONF_SOURCE_TYPE: SOURCE_TYPE_WEBHOOK,
+            CONF_WEBHOOK_ID: webhook.async_generate_id(),
+            CONF_AI_TASK_ENTITY_ID: ai_task_entity_id,
+        },
         options=options or {},
     )
     entry.add_to_hass(hass)

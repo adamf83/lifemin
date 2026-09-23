@@ -10,8 +10,18 @@ PLATFORMS = ["todo", "calendar", "sensor"]
 STORE_VERSION = 1
 STORE_KEY_FMT = "admin_inbox.{entry_id}"
 
+# Mail source: one admin_inbox entry watches exactly one source, either an
+# IMAP config entry (classic mailboxes) or a webhook fed by an external
+# automation (e.g. Power Automate's Outlook trigger, for mailboxes like
+# Microsoft 365 that no longer allow Basic Auth IMAP). See PLAN.md section 1a.
+CONF_SOURCE_TYPE = "source_type"
+SOURCE_TYPE_IMAP = "imap"
+SOURCE_TYPE_WEBHOOK = "webhook"
+SOURCE_TYPES = [SOURCE_TYPE_IMAP, SOURCE_TYPE_WEBHOOK]
+
 # Config / options keys
 CONF_IMAP_ENTRY_ID = "imap_entry_id"
+CONF_WEBHOOK_ID = "webhook_id"
 CONF_AI_TASK_ENTITY_ID = "ai_task_entity_id"
 CONF_SENDER_ALLOWLIST = "sender_allowlist"
 CONF_KEYWORDS = "keywords"
