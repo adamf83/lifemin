@@ -1,0 +1,7 @@
+{
+  "name": "Admin Inbox",
+  "render_readme": true,
+  "content_in_root": false,
+  "zip_release": false,
+  "homeassistant": "2025.12.0"
+}

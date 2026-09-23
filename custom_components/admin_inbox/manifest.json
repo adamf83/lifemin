@@ -1,0 +1,15 @@
+{
+  "domain": "admin_inbox",
+  "name": "Admin Inbox",
+  "codeowners": ["@adamf83"],
+  "config_flow": true,
+  "dependencies": ["imap", "ai_task"],
+  "documentation": "https://github.com/adamf83/lifemin/blob/main/README.md",
+  "integration_type": "hub",
+  "iot_class": "local_push",
+  "issue_tracker": "https://github.com/adamf83/lifemin/issues",
+  "quality_scale": "silver",
+  "requirements": [],
+  "version": "0.1.0",
+  "homeassistant": "2025.12.0"
+}

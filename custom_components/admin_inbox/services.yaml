@@ -1,0 +1,33 @@
+confirm_item:
+  fields:
+    entry_id:
+      required: true
+      example: "01J8Z..."
+      selector:
+        text:
+    item_id:
+      required: true
+      example: "01J9A..."
+      selector:
+        text:
+
+reject_item:
+  fields:
+    entry_id:
+      required: true
+      example: "01J8Z..."
+      selector:
+        text:
+    item_id:
+      required: true
+      example: "01J9A..."
+      selector:
+        text:
+
+reconcile:
+  fields:
+    entry_id:
+      required: true
+      example: "01J8Z..."
+      selector:
+        text:

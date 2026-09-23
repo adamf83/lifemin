@@ -1,0 +1,25 @@
+{
+  "entity": {
+    "todo": {
+      "needs_review": {
+        "default": "mdi:email-alert-outline"
+      }
+    },
+    "calendar": {
+      "household_obligations": {
+        "default": "mdi:calendar-check-outline"
+      }
+    },
+    "sensor": {
+      "next_due": {
+        "default": "mdi:calendar-clock-outline"
+      },
+      "amount_due_30d": {
+        "default": "mdi:cash-clock"
+      },
+      "pending_review": {
+        "default": "mdi:email-search-outline"
+      }
+    }
+  }
+}

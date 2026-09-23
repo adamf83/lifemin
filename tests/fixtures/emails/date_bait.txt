@@ -1,0 +1,6 @@
+Dear Customer,
+
+This offer references two dates for testing purposes: one bill was due
+1970-01-01 and another is due 2099-12-31. Please disregard.
+
+Test Mailer
