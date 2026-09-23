@@ -19,7 +19,19 @@ from custom_components.admin_inbox.repairs import async_check_imap_entry
 from custom_components.admin_inbox.store import StoreSchemaUnsupportedError
 
 from .conftest import add_mock_imap_entry, async_setup_fake_ai_task
-from .helpers import async_setup_admin_inbox
+from .helpers import async_setup_admin_inbox, async_setup_admin_inbox_webhook
+
+
+async def test_imap_entry_check_is_a_noop_for_webhook_source(hass: HomeAssistant):
+    ai_task_entity_id = await async_setup_fake_ai_task(hass, [])
+    entry = await async_setup_admin_inbox_webhook(hass, ai_task_entity_id=ai_task_entity_id)
+
+    missing = async_check_imap_entry(hass, entry)
+
+    assert missing is False
+    registry = ir.async_get(hass)
+    issue_id = f"{ISSUE_IMAP_ENTRY_REMOVED}_{entry.entry_id}"
+    assert registry.async_get_issue(DOMAIN, issue_id) is None
 
 
 async def test_imap_entry_removed_raises_and_clears_issue(hass: HomeAssistant):

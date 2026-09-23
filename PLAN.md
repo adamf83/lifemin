@@ -48,6 +48,55 @@ the calls made:
    brief's own privacy requirement — it documents the tradeoff (§7,
    Privacy) rather than assuming a specific model.
 
+### 1a. Amendment (post-implementation): mail source abstraction
+
+**Discovered after M1–M7 shipped**: the requester's actual mailbox is
+Microsoft 365 (Exchange Online), which retired Basic Auth (username +
+password) for IMAP/POP/SMTP AUTH — the *only* auth HA's core `imap`
+integration supports. There is no config fix for this: an M365 mailbox
+simply cannot be logged into over IMAP by `imap_content`/`imap.fetch`
+today, regardless of allowlists, folders, or app passwords (Microsoft
+stopped issuing those for this purpose too).
+
+This is handled by generalizing "the mail source" behind two
+interchangeable backends, chosen once at config-flow time
+(`CONF_SOURCE_TYPE`, `imap` | `webhook`):
+
+- **`imap`** — everything in §1–§11 below, unchanged.
+- **`webhook`** — for mailboxes IMAP can't reach. An external automation
+  with its own OAuth access to the mailbox (the reference implementation:
+  a Power Automate flow triggered on "When a new email arrives") POSTs
+  `{message_id, sender, subject, date, text}` as JSON to a per-entry HA
+  webhook URL. Since the payload already carries the full body, there is
+  no separate fetch step — `pipeline.async_handle_pushed_email` reserves
+  the dedup placeholder and goes straight into the shared
+  `_async_process_fetched` path (prefilter → extract → validate → review
+  queue), the same one the IMAP path joins after its own fetch succeeds.
+  `message_id` is required and used as the dedup `uid`; a request missing
+  it is rejected (400) rather than silently accepted with no way to
+  dedup it.
+
+Consequences elsewhere in this document:
+
+- §1's "one admin_inbox entry ↔ one IMAP entry" now reads "one mail
+  source", `imap` or `webhook`; the rest of the one-entry-per-mailbox
+  reasoning (dedup keys, calendar ownership, todo list) is unchanged.
+- `manifest.json`'s `imap` dependency moved from a hard `dependencies`
+  entry to `after_dependencies` — a webhook-only install has no reason to
+  force-load the IMAP integration. `webhook` (and its own `http`
+  dependency) is now a hard dependency, needed either way to register the
+  config flow's generated webhook.
+- Reconciliation (§4.8) only makes sense for the IMAP path, which can
+  re-fetch a uid on demand. A webhook-sourced item stuck in
+  `pending_fetch`/`fetch_failed` (only possible if HA restarts mid-request)
+  has no payload to retry with, so it's marked terminal
+  (`extraction_failed`, reason `webhook_source_no_retry`) instead of
+  endlessly retried.
+- `ISSUE_IMAP_ENTRY_REMOVED` (§4.8/§9 M6) is a no-op for `webhook`-sourced
+  entries — there's no IMAP config entry to go missing.
+- README gets a Power Automate walkthrough (flow trigger → HTTP action →
+  webhook URL from the config flow's confirmation step).
+
 ---
 
 ## 2. Verification results

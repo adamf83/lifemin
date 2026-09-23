@@ -2,11 +2,22 @@
   "config": {
     "step": {
       "user": {
+        "title": "Choose how Admin Inbox reads your mail",
+        "description": "Admin Inbox turns bills, renewals, appointments and expiry notices arriving by email into structured household obligations, gated behind your review. Choose **IMAP** for a mailbox the built-in IMAP integration can log into directly. Choose **Webhook** for a mailbox that doesn't allow that anymore -- notably Microsoft 365 / Exchange Online, which retired password-based IMAP login -- where an external automation (e.g. a Power Automate flow) pushes new mail to Admin Inbox instead. One Admin Inbox instance watches exactly one mail source.",
+        "data": {
+          "source_type": "Mail source"
+        }
+      },
+      "imap": {
         "title": "Choose the mailbox to watch",
-        "description": "Admin Inbox turns bills, renewals, appointments and expiry notices arriving by email into structured household obligations, gated behind your review. Pick the IMAP account it should watch. One Admin Inbox instance watches exactly one IMAP account.",
+        "description": "Pick the IMAP account it should watch.",
         "data": {
           "imap_entry_id": "IMAP account"
         }
+      },
+      "webhook_confirm": {
+        "title": "Point your automation at this webhook",
+        "description": "Set up a Power Automate flow (or any automation with mailbox access) triggered on new mail. Have it POST a JSON body to this URL with fields `message_id` (required, a stable per-message id used for deduplication), `sender`, `subject`, `date`, and `text` (the plain-text body):\n\n`{webhook_url}`\n\nSee the README for a Power Automate walkthrough. Click Submit once your automation is set up (you can finish setting it up afterwards -- this URL doesn't change)."
       },
       "ai_task": {
         "title": "Choose the AI Task entity",
@@ -27,13 +38,14 @@
     "abort": {
       "no_imap_entries_available": "No available IMAP config entries found. Set up the IMAP integration first, or every IMAP entry already has an Admin Inbox instance.",
       "no_ai_task_entities_available": "No AI Task entities found. Set up an AI Task-capable integration first.",
-      "already_configured": "This IMAP account is already configured."
+      "already_configured": "This mail source is already configured."
     }
   },
   "options": {
     "step": {
       "init": {
         "title": "Admin Inbox options",
+        "description": "Webhook URL (for this instance's external automation, e.g. Power Automate): {webhook_url}",
         "data": {
           "ai_task_entity_id": "AI Task entity",
           "sender_allowlist": "Sender allowlist (email address or @domain, one per line)",

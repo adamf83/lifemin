@@ -18,6 +18,7 @@ from .const import (
     CONF_FETCH_FAILURE_THRESHOLD,
     CONF_KEYWORDS,
     CONF_SENDER_ALLOWLIST,
+    CONF_SOURCE_TYPE,
     DEFAULT_DEDUP_PRUNE_DAYS,
     DEFAULT_DUE_DATE_FUTURE_YEARS,
     DEFAULT_DUE_DATE_PAST_YEARS,
@@ -25,6 +26,8 @@ from .const import (
     DOMAIN,
     ISSUE_AI_TASK_ENTITY_MISSING,
     ISSUE_IMAP_FETCH_DEGRADED,
+    SOURCE_TYPE_IMAP,
+    SOURCE_TYPE_WEBHOOK,
 )
 from .extractor import async_extract
 from .fetcher import FetchError, async_fetch_email
@@ -33,6 +36,7 @@ from .models import (
     FetchRequest,
     ItemState,
     MessageRef,
+    RawEmail,
     StoredItem,
     ValidationRejection,
 )
@@ -87,6 +91,7 @@ class AdminInboxPipeline:
         self._on_item_changed()
 
     async def async_handle_fetch_request(self, request: FetchRequest) -> None:
+        """IMAP source path: dedup, reserve a placeholder, then fetch the body."""
         if self.store.is_uid_known(request.uid):
             self.diagnostics.dedup_dropped += 1
             return
@@ -95,9 +100,39 @@ class AdminInboxPipeline:
         self._push_update()
         await self._async_fetch_and_process(item, request)
 
+    async def async_handle_pushed_email(self, request: FetchRequest, raw_email: RawEmail) -> None:
+        """Webhook source path: the caller already has the full body (e.g. a
+        Power Automate flow posted it), so there is no separate fetch step."""
+        if self.store.is_uid_known(request.uid):
+            self.diagnostics.dedup_dropped += 1
+            return
+
+        item = self.store.reserve_pending_fetch(request.uid)
+        self._push_update()
+        await self._async_process_fetched(item, request, raw_email)
+
     async def async_reconcile(self) -> None:
-        """Retry items stuck in pending_fetch/fetch_failed (mitigates flaky IMAP push)."""
+        """Retry items stuck in pending_fetch/fetch_failed (mitigates flaky IMAP push).
+
+        Only meaningful for the IMAP source, which can re-fetch a uid on
+        demand. A webhook-sourced item that's stuck got that way because
+        processing was interrupted (e.g. a HA restart) between reservation
+        and completion -- there's no way to re-fetch a pushed payload after
+        the fact, so such items are marked terminal instead of retried.
+        """
+        source_type = self.entry.data.get(CONF_SOURCE_TYPE, SOURCE_TYPE_IMAP)
         for item in self.store.stuck_items(timedelta(hours=1)):
+            if source_type == SOURCE_TYPE_WEBHOOK:
+                _LOGGER.warning(
+                    "admin_inbox: webhook-sourced item for uid %s was interrupted "
+                    "mid-processing and cannot be retried; marking failed",
+                    item.uid,
+                )
+                self.store.mark_terminal_dedup_only(
+                    item, ItemState.EXTRACTION_FAILED, "webhook_source_no_retry"
+                )
+                self._push_update()
+                continue
             request = FetchRequest(entry_id=item.entry_id, uid=item.uid)
             await self._async_fetch_and_process(item, request)
 
@@ -123,7 +158,9 @@ class AdminInboxPipeline:
 
         await self._async_process_fetched(item, request, raw_email)
 
-    async def _async_process_fetched(self, item: StoredItem, request: FetchRequest, raw_email) -> None:
+    async def _async_process_fetched(
+        self, item: StoredItem, request: FetchRequest, raw_email: RawEmail
+    ) -> None:
         chash = content_hash(raw_email.text)
         existing = self.store.find_by_content_hash(chash)
         if existing is not None and existing.id != item.id:
