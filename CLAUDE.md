@@ -141,3 +141,20 @@ everyone either).
   `hass_client` fixture (not `hass_client_no_auth` -- that endpoint
   requires auth, unlike the webhook view) to get a real `file_id`. See
   `test_upload_document.py`.
+
+## Service field selectors
+
+`entry_id` on all four `admin_inbox.*` services uses
+`selector.config_entry(integration: admin_inbox)` in `services.yaml`, not
+a plain text field -- it renders as a dropdown of this integration's
+instances by title in the frontend (Developer Tools -> Actions), so users
+never need to look up or type a raw config entry id. Don't revert this to
+`selector.text` (that was the original design and a real user complained
+they couldn't find the id anywhere). The Python-side schema
+(`UPLOAD_DOCUMENT_SCHEMA` etc. in `__init__.py`) still validates it as a
+plain `cv.string` -- only the YAML-declared selector (UI widget) changed,
+the submitted value is unchanged. Similarly, `todo.py`'s
+`_todo_item_from_stored` prints `Item ID: {item.id}` at the end of each
+to-do item's description specifically so `confirm_item`/`reject_item`
+are usable from a script -- don't remove that line, since there's no
+selector type for "pick a to-do item" to replace it with.

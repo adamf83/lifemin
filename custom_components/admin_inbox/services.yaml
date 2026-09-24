@@ -2,9 +2,9 @@ confirm_item:
   fields:
     entry_id:
       required: true
-      example: "01J8Z..."
       selector:
-        text:
+        config_entry:
+          integration: admin_inbox
     item_id:
       required: true
       example: "01J9A..."
@@ -15,9 +15,9 @@ reject_item:
   fields:
     entry_id:
       required: true
-      example: "01J8Z..."
       selector:
-        text:
+        config_entry:
+          integration: admin_inbox
     item_id:
       required: true
       example: "01J9A..."
@@ -28,17 +28,17 @@ reconcile:
   fields:
     entry_id:
       required: true
-      example: "01J8Z..."
       selector:
-        text:
+        config_entry:
+          integration: admin_inbox
 
 upload_document:
   fields:
     entry_id:
       required: true
-      example: "01J8Z..."
       selector:
-        text:
+        config_entry:
+          integration: admin_inbox
     file:
       required: true
       selector:

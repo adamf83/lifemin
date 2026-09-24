@@ -151,7 +151,9 @@ Call it (Developer Tools → Actions, a dashboard button, a script, or the
 Home Assistant companion app's share sheet forwarding an image straight to
 it) with:
 
-- `entry_id` — which Admin Inbox instance.
+- `entry_id` — which Admin Inbox instance, picked from a dropdown (see
+  [Calling admin_inbox.* actions](#calling-admin_inbox-actions-developer-tools-scripts-dashboards)
+  below).
 - `file` — the image or PDF, via the file picker.
 - `sender`, `subject`, `notes` — all optional; shown for your own review
   (and `notes` is also given to the model as context), not otherwise used.
@@ -180,6 +182,23 @@ either.
 - An `admin_inbox_item_due` event fires once per confirmed item when its
   date arrives, for automations (e.g. a notification on the day a bill is
   due).
+
+### Calling admin_inbox.* actions (Developer Tools, scripts, dashboards)
+
+Every `admin_inbox.*` action (`confirm_item`, `reject_item`, `reconcile`,
+`upload_document`) takes which instance to act on as its first field. In
+**Developer Tools → Actions**, that field renders as a dropdown listing
+your Admin Inbox instances by name (e.g. "Admin Inbox (Mail Test)") — pick
+one, you don't need to look up or type an id. If you're writing YAML
+directly (a script/automation), that dropdown's underlying value is the
+config entry's id; get it the same way you would for any other
+integration's config entry (e.g. build the action once in the UI, then
+switch to the YAML view to see what it filled in).
+
+`confirm_item`/`reject_item` also need the specific item's id — normally
+you don't need these two at all, since checking off or deleting the to-do
+item does the same thing. If you do need to script it, the id is printed
+at the end of that item's description in the **Needs review** to-do list.
 
 ## Privacy
 

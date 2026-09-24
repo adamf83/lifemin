@@ -48,6 +48,11 @@ def _todo_item_from_stored(item: StoredItem) -> TodoItem:
         f"Date: {the_date.isoformat() if the_date else '—'}",
         f"Confidence: {item.confidence:.2f}" if item.confidence is not None else "",
         f"Source quote: {item.source_quote}",
+        # Included so admin_inbox.confirm_item/reject_item are usable from
+        # a script without first hunting for the item's id elsewhere --
+        # checking the box or deleting it in this list still does the same
+        # thing without needing it.
+        f"Item ID: {item.id}",
     ]
     return TodoItem(
         uid=item.id,
