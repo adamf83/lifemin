@@ -74,9 +74,28 @@ EVENT_ITEM_DUE = "admin_inbox_item_due"
 SERVICE_CONFIRM_ITEM = "confirm_item"
 SERVICE_REJECT_ITEM = "reject_item"
 SERVICE_RECONCILE = "reconcile"
+SERVICE_UPLOAD_DOCUMENT = "upload_document"
 
 ATTR_ITEM_ID = "item_id"
 ATTR_ENTRY_ID = "entry_id"
+ATTR_FILE = "file"
+ATTR_SENDER = "sender"
+ATTR_SUBJECT = "subject"
+ATTR_NOTES = "notes"
+
+DEFAULT_UPLOAD_SUBJECT = "Manually uploaded document"
+
+# Uploaded attachments: MIME allowlist and size cap. Deliberately narrow --
+# this is an untrusted-input surface (PLAN.md section 2.2/11), same class of
+# risk as email content, just delivered as an image/PDF instead of text.
+UPLOAD_ALLOWED_CONTENT_TYPES = {
+    "image/jpeg",
+    "image/png",
+    "image/webp",
+    "image/heic",
+    "application/pdf",
+}
+UPLOAD_MAX_SIZE_BYTES = 10 * 1024 * 1024
 
 # Repair issue ids
 ISSUE_STORE_UNAVAILABLE = "store_unavailable"

@@ -12,12 +12,16 @@ prompt-injection defenses, test strategy and milestone breakdown.
 
 1. Watches one mailbox for new mail, via either of two mail sources you
    choose at setup (see [Mail source](#mail-source-imap-or-webhook)
-   below):
+   below), plus an always-available manual path:
    - **IMAP** — the built-in `imap` integration, for mailboxes it can log
      into directly.
    - **Webhook** — an external automation with its own access to the
      mailbox pushes new mail to Admin Inbox. Needed for mailboxes IMAP
      can't reach, notably **Microsoft 365 / Exchange Online**.
+   - **Manual upload** — the `admin_inbox.upload_document` action, for a
+     single bill/renewal/appointment image or PDF, whenever neither of
+     the above is available (see
+     [Manual upload](#manual-upload-no-mailbox-access-needed) below).
 2. Cheaply pre-filters by sender allowlist / keywords before anything is
    sent to a model.
 3. Sends the email body to an [AI Task](https://www.home-assistant.io/integrations/ai_task/)
@@ -134,6 +138,34 @@ Home Assistant must be reachable from Microsoft's cloud for this to work
 (Nabu Casa remote access or your own reverse proxy/port-forward with a
 valid certificate — a purely local-only HA instance can't receive this).
 
+## Manual upload: no mailbox access needed
+
+Power Automate's **HTTP** action (what the webhook walkthrough above
+needs) is a *Premium* connector — it requires a Power Automate per-user
+or per-flow license, which isn't included in every Microsoft 365 seat. If
+that's you, or you just don't want to set up an automation for a mailbox
+you only get the occasional bill in, use the `admin_inbox.upload_document`
+action instead: no mailbox access, no automation, no license required.
+
+Call it (Developer Tools → Actions, a dashboard button, a script, or the
+Home Assistant companion app's share sheet forwarding an image straight to
+it) with:
+
+- `entry_id` — which Admin Inbox instance.
+- `file` — the image or PDF, via the file picker.
+- `sender`, `subject`, `notes` — all optional; shown for your own review
+  (and `notes` is also given to the model as context), not otherwise used.
+
+This needs an AI Task entity that supports image attachments (a
+vision-capable model) — if yours doesn't, the upload will fail with an
+extraction error same as any other failed extraction. Because there's no
+independently-extracted text to check the model's transcription against
+(unlike email/webhook content), the verbatim source-quote check is
+relaxed for uploads specifically — see PLAN.md section 1b for the
+reasoning. Every other check (and the review queue itself) still applies
+in full: nothing an upload produces reaches your calendar unconfirmed
+either.
+
 ## Using it
 
 - Check the **Needs review** to-do list (`todo.<name>_needs_review`)
@@ -164,6 +196,12 @@ valid certificate — a purely local-only HA instance can't receive this).
   integration doesn't assume or require any particular one.
 - Diagnostics downloads never include email content: no `source_quote`,
   no subject/sender — only counts and state distribution.
+- **Manual uploads are the one exception to "never the full body"**: the
+  uploaded image/PDF itself is written to
+  `config/media/admin_inbox/<entry_id>/` so the AI Task call can read it,
+  and stays there (it's not deleted after processing). Delete files under
+  that folder yourself if you want them gone; Admin Inbox doesn't
+  currently clean them up automatically.
 
 ## Troubleshooting
 
@@ -190,6 +228,12 @@ valid certificate — a purely local-only HA instance can't receive this).
   malformed or missing `message_id`; anything else (timeout, connection
   refused) usually means Home Assistant isn't reachable from outside your
   network.
+- **`admin_inbox.upload_document` fails immediately**: an "Upload
+  rejected" error names either an unsupported file type (only JPEG, PNG,
+  WEBP, HEIC and PDF are accepted) or a file over 10MB. An "extraction
+  failed" outcome on the item itself (check diagnostics, or the logs) most
+  often means the configured AI Task entity doesn't support image
+  attachments — pick a vision-capable one in this integration's options.
 
 ## Development
 

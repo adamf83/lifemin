@@ -6,8 +6,9 @@ household obligations, gated behind human review.
 
 Working name / domain: `admin_inbox`. HACS distribution: custom repository
 only for v1 (default-repo listing is a later phase). Minimum HA core:
-**2025.12**. One admin_inbox config entry watches exactly one IMAP config
-entry (see §1).
+**2025.12**. One admin_inbox config entry watches exactly one mail source
+— IMAP or webhook (see §1, amended in §1a) — plus an always-available
+manual upload path for documents neither can reach (§1b).
 
 ---
 
@@ -96,6 +97,60 @@ Consequences elsewhere in this document:
   entries — there's no IMAP config entry to go missing.
 - README gets a Power Automate walkthrough (flow trigger → HTTP action →
   webhook URL from the config flow's confirmation step).
+
+### 1b. Amendment (post-implementation): manual upload path
+
+**Discovered after 1a shipped**: the webhook source's reference
+implementation (Power Automate's HTTP action) is a *Premium* connector —
+it requires a Power Automate per-user or per-flow license, which isn't
+included in every Microsoft 365 seat. For a user with neither IMAP access
+nor a Power Automate license, neither mail source in §1a is reachable.
+
+Added a third path that needs no mailbox access at all: an
+`admin_inbox.upload_document` service action, taking a `FileSelector`
+file (image or PDF) plus optional sender/subject/notes, for manually
+adding a single document to the review queue — e.g. via the Home
+Assistant companion app's share sheet, a dashboard button, or an
+automation of the user's own.
+
+Mechanically:
+
+- `uploads.py` bridges a `file_upload`-uploaded file into a
+  `media-source://` identifier (copying it into the local media_source
+  root under `media/admin_inbox/<entry_id>/`) — required because
+  `ai_task`'s `attachments` parameter only resolves media-source
+  identifiers or a camera/image entity snapshot, never raw bytes or an
+  arbitrary path (confirmed in §2.2/§11, now actually exercised). MIME
+  allowlist and a 10MB size cap apply, same untrusted-input-surface
+  reasoning as §2.2.
+- `pipeline.async_handle_uploaded_document` is a third entry point into
+  the shared `_async_process_fetched`, with every upload-specific
+  behavior expressed as flags on that shared method rather than a
+  parallel implementation: `skip_prefilter=True` (the user explicitly
+  chose this document; prefiltering it would be silently wrong),
+  `check_content_hash=False` (uploads aren't comparable by body text —
+  two different uploads with no notes would otherwise hash identically
+  and get merged as "the same item, different uid" — a real bug caught by
+  `test_upload_document_two_uploads_are_not_merged`), and
+  `verify_source_quote=False` (see below).
+- `validator.py`'s verbatim-substring check gains a `verify_source_quote`
+  flag. For an upload, `source_quote` is the model's own transcription of
+  an image — there's no independently-extracted text to check it
+  against without adding OCR, so the check would just be checking the
+  model against itself. **This is a real, deliberate weakening of the
+  mechanical defense** §7 relies on for the email/webhook paths. It's
+  accepted here specifically because the threat model differs: the human
+  physically has the document they just uploaded, unlike the email case
+  where an adversarial third party controls the content and the human
+  hasn't necessarily looked at it yet. The review queue remains the
+  actual safety net either way (nothing auto-confirms), and every other
+  mechanical check (kind enum, length caps, date sanity range, confidence
+  range, exactly-one-of-due/event-date) still applies in full.
+- The extraction call requires an AI Task entity with
+  `AITaskEntityFeature.SUPPORT_ATTACHMENTS` (i.e. vision-capable); one
+  without it fails the same way any other extraction failure does — no
+  new repair issue, since this is a per-call condition, not a persistent
+  config problem the way a missing entity_id is.
 
 ---
 

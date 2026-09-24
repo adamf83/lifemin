@@ -62,13 +62,19 @@ Per-stage unit tests (`test_prefilter.py`, `test_extractor.py`,
 constructed objects. `test_pipeline.py` is the IMAP-source end-to-end test
 (fires a real `imap_content` event through the full stack into a `todo`
 item); `test_webhook.py` is its webhook-source counterpart (POSTs to the
-registered webhook via the `hass_client_no_auth` fixture instead).
+registered webhook via the `hass_client_no_auth` fixture instead);
+`test_upload_document.py` is the manual-upload counterpart (POSTs a real
+file to `/api/file_upload` via the authenticated `hass_client` fixture,
+then calls the service).
 `test_config_flow.py`, `test_calendar.py`, `test_todo.py`, `test_sensor.py`,
 `test_repairs.py` are entity/flow-level tests. `tests/helpers.py` holds
 shared setup helpers used by the entity-rendering tests
 (`async_setup_admin_inbox` for IMAP source, `async_setup_admin_inbox_webhook`
-for webhook source); `tests/conftest.py` holds the `FakeAITaskEntity` and
-mock-IMAP-entry fixtures used everywhere.
+for webhook source); `tests/conftest.py` holds the `FakeAITaskEntity`
+(pass `supports_attachments=True` to `async_setup_fake_ai_task` for
+upload/attachment tests), `async_create_local_media_file` (a resolvable
+`media-source://` identifier without going through the upload HTTP layer),
+and mock-IMAP-entry fixtures used everywhere.
 
 ## Mail source: IMAP vs webhook
 
@@ -97,3 +103,41 @@ Auth IMAP, which is all HA's core `imap` integration supports).
   config flow (`webhook_confirm` step), and persistently in the options
   flow's `init` step description. Don't add a third mechanism without
   checking whether one of these already covers the need.
+
+## Manual upload (admin_inbox.upload_document)
+
+A third entry point, orthogonal to the mail source above (works
+regardless of whether the entry is IMAP- or webhook-sourced) — see
+`PLAN.md` section 1b for the rationale (Power Automate's HTTP action is a
+Premium-licensed connector, so the webhook path isn't available to
+everyone either).
+
+- `uploads.py`'s `async_store_uploaded_file` bridges a
+  `file_upload`-uploaded file into a `media-source://` identifier
+  (`ai_task`'s `attachments` param only resolves those, or a camera/image
+  entity snapshot -- never raw bytes or an arbitrary path). It copies the
+  file into `media/admin_inbox/<entry_id>/` under the config dir and
+  **does not delete it afterwards** (unlike `process_uploaded_file`'s own
+  temp copy, which is single-use and auto-deleted) -- that's intentional
+  (the AI Task call needs the file to still exist when it resolves the
+  attachment, asynchronously, after this function returns) but means
+  storage grows unbounded; there's no cleanup job for it yet.
+- `pipeline.async_handle_uploaded_document` calls the same
+  `_async_process_fetched` the IMAP/webhook paths use, with three flags
+  set for upload-specific behavior: `skip_prefilter=True`,
+  `check_content_hash=False` (see the content-hash collision risk noted
+  in `_async_process_fetched`'s docstring/PLAN.md 1b if you're tempted to
+  turn this back on), `verify_source_quote=False`. If you add a fourth
+  entry point, prefer adding another flag over copy-pasting the method.
+- `validator.validate_extraction`'s `verify_source_quote=False` path
+  still requires `source_quote` to be present and non-empty after
+  whitespace normalization -- it only skips checking it's a substring of
+  `raw_email.text`. Don't relax this further without re-reading PLAN.md
+  1b's reasoning for why it's already a weaker check than the email path.
+- Testing an upload end-to-end needs `supports_attachments=True` passed to
+  `async_setup_fake_ai_task` (the real `async_generate_data` rejects
+  attachments otherwise via `AITaskEntityFeature.SUPPORT_ATTACHMENTS`),
+  and a real POST to `/api/file_upload` through the authenticated
+  `hass_client` fixture (not `hass_client_no_auth` -- that endpoint
+  requires auth, unlike the webhook view) to get a real `file_id`. See
+  `test_upload_document.py`.

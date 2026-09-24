@@ -3,7 +3,7 @@
     "step": {
       "user": {
         "title": "Choose how Admin Inbox reads your mail",
-        "description": "Admin Inbox turns bills, renewals, appointments and expiry notices arriving by email into structured household obligations, gated behind your review. Choose **IMAP** for a mailbox the built-in IMAP integration can log into directly. Choose **Webhook** for a mailbox that doesn't allow that anymore -- notably Microsoft 365 / Exchange Online, which retired password-based IMAP login -- where an external automation (e.g. a Power Automate flow) pushes new mail to Admin Inbox instead. One Admin Inbox instance watches exactly one mail source.",
+        "description": "Admin Inbox turns bills, renewals, appointments and expiry notices arriving by email into structured household obligations, gated behind your review. Choose **IMAP** for a mailbox the built-in IMAP integration can log into directly. Choose **Webhook** for a mailbox that doesn't allow that anymore -- notably Microsoft 365 / Exchange Online, which retired password-based IMAP login -- where an external automation (e.g. a Power Automate flow) pushes new mail to Admin Inbox instead. Either way, the `admin_inbox.upload_document` action is always available afterwards for manually uploading a screenshot or PDF -- useful if premium Power Automate connectors aren't available to you. One Admin Inbox instance watches exactly one mail source.",
         "data": {
           "source_type": "Mail source"
         }
@@ -80,6 +80,72 @@
       },
       "pending_review": {
         "name": "Pending review count"
+      }
+    }
+  },
+  "services": {
+    "confirm_item": {
+      "name": "Confirm item",
+      "description": "Confirm a pending review item, equivalent to checking it off the Needs review to-do list.",
+      "fields": {
+        "entry_id": {
+          "name": "Entry ID",
+          "description": "The admin_inbox config entry this item belongs to."
+        },
+        "item_id": {
+          "name": "Item ID",
+          "description": "The pending item's id."
+        }
+      }
+    },
+    "reject_item": {
+      "name": "Reject item",
+      "description": "Reject a pending review item, equivalent to deleting it from the Needs review to-do list.",
+      "fields": {
+        "entry_id": {
+          "name": "Entry ID",
+          "description": "The admin_inbox config entry this item belongs to."
+        },
+        "item_id": {
+          "name": "Item ID",
+          "description": "The pending item's id."
+        }
+      }
+    },
+    "reconcile": {
+      "name": "Reconcile",
+      "description": "Manually trigger a reconciliation pass (retries stuck IMAP fetches, prunes old dedup-only records) instead of waiting for the next scheduled one.",
+      "fields": {
+        "entry_id": {
+          "name": "Entry ID",
+          "description": "The admin_inbox config entry to reconcile."
+        }
+      }
+    },
+    "upload_document": {
+      "name": "Upload document",
+      "description": "Manually add a bill/renewal/appointment/expiry document (an image or PDF) to the review queue -- for mail Admin Inbox can't otherwise reach (e.g. no IMAP access and no Power Automate license). Requires an AI Task entity that supports image attachments (vision).",
+      "fields": {
+        "entry_id": {
+          "name": "Entry ID",
+          "description": "The admin_inbox config entry to add this item to."
+        },
+        "file": {
+          "name": "File",
+          "description": "The image or PDF to extract from."
+        },
+        "sender": {
+          "name": "Sender",
+          "description": "Optional: who this is from, e.g. the company name. Shown for review only, not extracted from."
+        },
+        "subject": {
+          "name": "Subject",
+          "description": "Optional: a short label for this upload. Shown for review only."
+        },
+        "notes": {
+          "name": "Notes",
+          "description": "Optional caption or context to send to the model alongside the image, e.g. \"this is my electric bill\"."
+        }
       }
     }
   },

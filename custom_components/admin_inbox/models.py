@@ -52,7 +52,13 @@ class FetchRequest:
 
 @dataclass
 class RawEmail:
-    """The fetched content of a single email."""
+    """The fetched content of a single email, or a manually uploaded document.
+
+    For an upload, `text` holds the optional caption/notes the user typed
+    (may be empty) and `attachment_media_content_ids` holds the
+    media-source identifier(s) for the uploaded file(s) -- see uploads.py
+    and pipeline.async_handle_uploaded_document.
+    """
 
     uid: str
     sender: str
@@ -60,6 +66,7 @@ class RawEmail:
     date: str
     text: str
     parts: list[str] = field(default_factory=list)
+    attachment_media_content_ids: list[str] = field(default_factory=list)
 
 
 @dataclass

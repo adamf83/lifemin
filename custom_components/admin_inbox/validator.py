@@ -57,8 +57,19 @@ def validate_extraction(
     *,
     past_years: int,
     future_years: int,
+    verify_source_quote: bool = True,
 ) -> ExtractedFields | ValidationRejection:
-    """Run every mechanical check; any single failure rejects the whole item."""
+    """Run every mechanical check; any single failure rejects the whole item.
+
+    verify_source_quote=False skips the verbatim-substring check (still
+    requires the field to be present and under the length cap). Only used
+    for attachment-sourced items (pipeline.async_handle_uploaded_document):
+    there's no independent extracted text to check a transcribed quote
+    against without OCR, so the check would be checking the model's own
+    transcription against itself. See PLAN.md section 1b for the tradeoff
+    this accepts -- the human already has the document in hand there,
+    unlike the email case this check primarily defends.
+    """
 
     for field_name in _REQUIRED_FIELDS:
         if data.get(field_name) in (None, ""):
@@ -83,10 +94,13 @@ def validate_extraction(
     # Verbatim substring check, whitespace-normalized only. No fuzzy
     # matching: that leniency is exactly what a prompt-injection payload
     # would exploit to fabricate a plausible but unverified quote.
-    normalized_body = normalize_text(raw_email.text)
-    normalized_quote = normalize_text(source_quote)
-    if not normalized_quote or normalized_quote not in normalized_body:
-        return ValidationRejection(field="source_quote", reason="not_verbatim_in_source")
+    if verify_source_quote:
+        normalized_body = normalize_text(raw_email.text)
+        normalized_quote = normalize_text(source_quote)
+        if not normalized_quote or normalized_quote not in normalized_body:
+            return ValidationRejection(field="source_quote", reason="not_verbatim_in_source")
+    elif not normalize_text(source_quote):
+        return ValidationRejection(field="source_quote", reason="empty_after_normalization")
 
     try:
         confidence = float(data["confidence"])

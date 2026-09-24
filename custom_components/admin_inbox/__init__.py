@@ -6,21 +6,27 @@ from datetime import timedelta
 
 import voluptuous as vol
 from homeassistant.core import HomeAssistant, ServiceCall
-from homeassistant.exceptions import ConfigEntryNotReady
+from homeassistant.exceptions import ConfigEntryNotReady, ServiceValidationError
 from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers import issue_registry as ir
+from homeassistant.helpers import selector
 from homeassistant.helpers.event import async_track_time_change, async_track_time_interval
 from homeassistant.util import dt as dt_util
 
-from . import webhook_listener
+from . import uploads, webhook_listener
 from .const import (
     ATTR_ENTRY_ID,
+    ATTR_FILE,
     ATTR_ITEM_ID,
+    ATTR_NOTES,
+    ATTR_SENDER,
+    ATTR_SUBJECT,
     CONF_IMAP_ENTRY_ID,
     CONF_RECONCILE_INTERVAL_MINUTES,
     CONF_SOURCE_TYPE,
     CONF_WEBHOOK_ID,
     DEFAULT_RECONCILE_INTERVAL_MINUTES,
+    DEFAULT_UPLOAD_SUBJECT,
     DOMAIN,
     ISSUE_STORE_SCHEMA_UNSUPPORTED,
     ISSUE_STORE_UNAVAILABLE,
@@ -28,6 +34,7 @@ from .const import (
     SERVICE_CONFIRM_ITEM,
     SERVICE_RECONCILE,
     SERVICE_REJECT_ITEM,
+    SERVICE_UPLOAD_DOCUMENT,
     SOURCE_TYPE_IMAP,
     SOURCE_TYPE_WEBHOOK,
 )
@@ -38,6 +45,7 @@ from .pipeline import AdminInboxPipeline
 from .repairs import async_check_imap_entry
 from .runtime_data import AdminInboxConfigEntry, AdminInboxRuntimeData
 from .store import AdminInboxStore, StoreSchemaUnsupportedError
+from .uploads import UploadRejected
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -46,6 +54,17 @@ CONFIRM_ITEM_SCHEMA = vol.Schema(
 )
 REJECT_ITEM_SCHEMA = CONFIRM_ITEM_SCHEMA
 RECONCILE_SCHEMA = vol.Schema({vol.Required(ATTR_ENTRY_ID): cv.string})
+UPLOAD_DOCUMENT_SCHEMA = vol.Schema(
+    {
+        vol.Required(ATTR_ENTRY_ID): cv.string,
+        vol.Required(ATTR_FILE): selector.FileSelector(
+            selector.FileSelectorConfig(accept="image/*,.pdf,application/pdf")
+        ),
+        vol.Optional(ATTR_SENDER, default=""): cv.string,
+        vol.Optional(ATTR_SUBJECT, default=DEFAULT_UPLOAD_SUBJECT): cv.string,
+        vol.Optional(ATTR_NOTES, default=""): cv.string,
+    }
+)
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: AdminInboxConfigEntry) -> bool:
@@ -156,6 +175,28 @@ def _async_register_services(hass: HomeAssistant) -> None:
             raise vol.Invalid(f"Unknown admin_inbox entry_id: {entry_id}")
         await entry.runtime_data.pipeline.async_reconcile()
 
+    async def _async_upload_document(call: ServiceCall) -> None:
+        entry_id = call.data[ATTR_ENTRY_ID]
+        entry = hass.config_entries.async_get_entry(entry_id)
+        if entry is None or entry.domain != DOMAIN:
+            raise vol.Invalid(f"Unknown admin_inbox entry_id: {entry_id}")
+
+        try:
+            media_content_id = await uploads.async_store_uploaded_file(
+                hass, entry_id, call.data[ATTR_FILE]
+            )
+        except UploadRejected as err:
+            raise ServiceValidationError(f"Upload rejected: {err}") from err
+        except ValueError as err:
+            raise ServiceValidationError(f"Upload not found: {err}") from err
+
+        await entry.runtime_data.pipeline.async_handle_uploaded_document(
+            media_content_id=media_content_id,
+            sender=call.data[ATTR_SENDER],
+            subject=call.data[ATTR_SUBJECT],
+            notes=call.data[ATTR_NOTES],
+        )
+
     hass.services.async_register(
         DOMAIN, SERVICE_CONFIRM_ITEM, _async_confirm_item, schema=CONFIRM_ITEM_SCHEMA
     )
@@ -164,6 +205,12 @@ def _async_register_services(hass: HomeAssistant) -> None:
     )
     hass.services.async_register(
         DOMAIN, SERVICE_RECONCILE, _async_reconcile_service, schema=RECONCILE_SCHEMA
+    )
+    hass.services.async_register(
+        DOMAIN,
+        SERVICE_UPLOAD_DOCUMENT,
+        _async_upload_document,
+        schema=UPLOAD_DOCUMENT_SCHEMA,
     )
 
 
