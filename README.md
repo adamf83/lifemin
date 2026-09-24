@@ -216,11 +216,13 @@ at the end of that item's description in the **Needs review** to-do list.
 - Diagnostics downloads never include email content: no `source_quote`,
   no subject/sender — only counts and state distribution.
 - **Manual uploads are the one exception to "never the full body"**: the
-  uploaded image/PDF itself is written to
-  `config/media/admin_inbox/<entry_id>/` so the AI Task call can read it,
-  and stays there (it's not deleted after processing). Delete files under
-  that folder yourself if you want them gone; Admin Inbox doesn't
-  currently clean them up automatically.
+  uploaded image/PDF itself is written to your local media folder's
+  `admin_inbox/<entry_id>/` subdirectory (under Settings → System →
+  Storage → Media, or just `/media` on Home Assistant OS/Supervised/most
+  Docker installs, `config/media` otherwise) so the AI Task call can read
+  it, and stays there — it's not deleted after processing. Browse to it
+  under **Media** in the sidebar to delete files you want gone; Admin
+  Inbox doesn't currently clean them up automatically.
 
 ## Troubleshooting
 

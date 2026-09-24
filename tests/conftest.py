@@ -125,7 +125,13 @@ async def async_create_local_media_file(
     assert await async_setup_component(hass, "media_source", {})
 
     def _write() -> None:
-        path = pathlib.Path(hass.config.path("media", subpath))
+        # hass.config.media_dirs["local"] is the root media_source actually
+        # resolves against -- NOT always hass.config.path("media") (that's
+        # only true off Docker; a Docker/HAOS install defaults to the fixed
+        # path /media instead). Using the wrong root here would make this
+        # fixture pass even if uploads.py regressed to writing to the wrong
+        # place, since both would then agree on the same wrong path.
+        path = pathlib.Path(hass.config.media_dirs["local"]) / subpath
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_bytes(content)
 

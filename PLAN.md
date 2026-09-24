@@ -117,12 +117,24 @@ Mechanically:
 
 - `uploads.py` bridges a `file_upload`-uploaded file into a
   `media-source://` identifier (copying it into the local media_source
-  root under `media/admin_inbox/<entry_id>/`) — required because
+  root's `admin_inbox/<entry_id>/` subdirectory) — required because
   `ai_task`'s `attachments` parameter only resolves media-source
   identifiers or a camera/image entity snapshot, never raw bytes or an
   arbitrary path (confirmed in §2.2/§11, now actually exercised). MIME
   allowlist and a 10MB size cap apply, same untrusted-input-surface
-  reasoning as §2.2.
+  reasoning as §2.2. **Post-ship correction**: "the local media_source
+  root" is `hass.config.media_dirs["local"]`, which is *not* always
+  `hass.config.path("media")` — on Docker/HAOS/Supervised installs it
+  defaults to the fixed path `/media` instead. An initial version wrote
+  to `hass.config.path("media")` directly, which passed every test (this
+  repo's test harness isn't a Docker env, so the two paths happened to
+  coincide there) and then failed for a real user with `ai_task`'s
+  attachment resolution reporting the file "does not exist" — the file
+  was on disk, just not where `media_source` was looking.
+  `uploads._local_media_root` now reads `media_dirs["local"]` directly,
+  and `test_upload_document_respects_configured_local_media_root` pins
+  `media_dirs` to a path that deliberately isn't `hass.config.path
+  ("media")` to keep this class of bug from shipping silently again.
 - `pipeline.async_handle_uploaded_document` is a third entry point into
   the shared `_async_process_fetched`, with every upload-specific
   behavior expressed as flags on that shared method rather than a
