@@ -116,12 +116,24 @@ everyone either).
   `file_upload`-uploaded file into a `media-source://` identifier
   (`ai_task`'s `attachments` param only resolves those, or a camera/image
   entity snapshot -- never raw bytes or an arbitrary path). It copies the
-  file into `media/admin_inbox/<entry_id>/` under the config dir and
-  **does not delete it afterwards** (unlike `process_uploaded_file`'s own
-  temp copy, which is single-use and auto-deleted) -- that's intentional
-  (the AI Task call needs the file to still exist when it resolves the
-  attachment, asynchronously, after this function returns) but means
-  storage grows unbounded; there's no cleanup job for it yet.
+  file into `admin_inbox/<entry_id>/` under `hass.config.media_dirs["local"]`
+  -- **not** `hass.config.path("media")`. Those two are only the same path
+  off Docker; on Docker/HAOS/Supervised installs (the common case)
+  `media_dirs["local"]` defaults to the fixed path `/media` instead (see
+  `core_config.py`). Writing to `hass.config.path("media")` directly
+  shipped once, passed every test (this sandbox isn't a Docker env, so
+  `hass.config.media_dirs["local"]` happened to equal
+  `hass.config.path("media")` here), and broke for a real user with a
+  "does not exist" error from `ai_task`'s attachment resolution --
+  `test_upload_document_respects_configured_local_media_root` pins
+  `hass.config.media_dirs` to a directory that deliberately isn't
+  `hass.config.path("media")` specifically to catch a regression back to
+  that. The copy also **does not delete the file afterwards** (unlike
+  `process_uploaded_file`'s own temp copy, which is single-use and
+  auto-deleted) -- that's intentional (the AI Task call needs the file to
+  still exist when it resolves the attachment, asynchronously, after this
+  function returns) but means storage grows unbounded; there's no cleanup
+  job for it yet.
 - `pipeline.async_handle_uploaded_document` calls the same
   `_async_process_fetched` the IMAP/webhook paths use, with three flags
   set for upload-specific behavior: `skip_prefilter=True`,

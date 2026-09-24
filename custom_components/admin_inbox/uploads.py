@@ -35,6 +35,26 @@ def _guess_content_type(filename: str) -> str:
     return content_type or "application/octet-stream"
 
 
+def _local_media_root(hass: HomeAssistant) -> Path:
+    """Return the actual filesystem root the "local" media source resolves against.
+
+    This is NOT always hass.config.path("media"): on a Docker-based install
+    (including Home Assistant OS/Supervised) it defaults to the fixed path
+    /media instead, per homeassistant/core_config.py. Writing to
+    hass.config.path("media", ...) directly -- as an earlier version of this
+    function did -- silently writes into a directory media_source never
+    looks in on those installs, so ai_task's later attachment resolution
+    fails with "does not exist" even though the copy succeeded.
+    """
+    media_dirs = hass.config.media_dirs
+    if "local" not in media_dirs:
+        raise UploadRejected(
+            "no 'local' media_dirs entry is configured; cannot store the upload "
+            "where media_source can find it"
+        )
+    return Path(media_dirs["local"])
+
+
 def _blocking_store(hass: HomeAssistant, entry_id: str, file_id: str) -> str:
     """Validate and copy the uploaded file; returns the new filename.
 
@@ -55,7 +75,7 @@ def _blocking_store(hass: HomeAssistant, entry_id: str, file_id: str) -> str:
         filename = f"{ulid_now()}{extension}"
         raise_if_invalid_filename(filename)
 
-        media_dir = Path(hass.config.path("media", MEDIA_SUBDIR, entry_id))
+        media_dir = _local_media_root(hass) / MEDIA_SUBDIR / entry_id
         media_dir.mkdir(parents=True, exist_ok=True)
         shutil.copyfile(temp_path, media_dir / filename)
 

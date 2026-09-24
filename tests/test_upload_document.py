@@ -8,6 +8,8 @@ service with the returned file_id.
 """
 from __future__ import annotations
 
+from pathlib import Path
+
 from aiohttp import FormData
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ServiceValidationError
@@ -143,3 +145,55 @@ async def test_upload_document_two_uploads_are_not_merged(hass: HomeAssistant, h
     store = entry.runtime_data.store
     titles = {item.title for item in store.items_in_state(ItemState.PENDING)}
     assert titles == {"Bill one", "Bill two"}
+
+
+async def test_upload_document_respects_configured_local_media_root(
+    hass: HomeAssistant, hass_client, tmp_path
+):
+    """Regression: on a Docker/HAOS install, hass.config.media_dirs["local"]
+    defaults to the fixed path /media, NOT hass.config.path("media") --
+    writing the upload under the latter (an earlier version of uploads.py
+    did) makes ai_task's later attachment resolution fail with a spurious
+    "does not exist", because media_source never looks there. Point
+    media_dirs at a directory that's deliberately NOT hass.config.path
+    ("media") and confirm the upload still succeeds and lands there."""
+    custom_media_root = tmp_path / "not_the_config_media_dir"
+    custom_media_root.mkdir()
+    hass.config.media_dirs = {"local": str(custom_media_root)}
+
+    imap_entry = add_mock_imap_entry(hass)
+    ai_task_entity_id = await async_setup_fake_ai_task(
+        hass,
+        [
+            {
+                "kind": "bill",
+                "title": "Electric bill",
+                "counterparty": "Acme Energy",
+                "confidence": 0.9,
+                "source_quote": "q",
+                "due_date": "2026-10-01",
+            }
+        ],
+        supports_attachments=True,
+    )
+    entry = await async_setup_admin_inbox(
+        hass, imap_entry_id=imap_entry.entry_id, ai_task_entity_id=ai_task_entity_id
+    )
+
+    file_id = await _upload_file(hass_client, filename="bill.jpg", content=b"\xff\xd8\xff fake")
+    await hass.services.async_call(
+        DOMAIN,
+        "upload_document",
+        {ATTR_ENTRY_ID: entry.entry_id, ATTR_FILE: file_id},
+        blocking=True,
+    )
+    await hass.async_block_till_done()
+
+    store = entry.runtime_data.store
+    items = store.items_in_state(ItemState.PENDING)
+    assert len(items) == 1, "extraction failed -- likely wrote to the wrong media root again"
+
+    uploaded_files = list((custom_media_root / "admin_inbox" / entry.entry_id).glob("*.jpg"))
+    assert len(uploaded_files) == 1
+    default_media_dir = Path(hass.config.path("media", "admin_inbox", entry.entry_id))
+    assert not default_media_dir.exists(), "should not also write under hass.config.path('media')"
