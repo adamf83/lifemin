@@ -89,12 +89,12 @@
       "description": "Confirm a pending review item, equivalent to checking it off the Needs review to-do list.",
       "fields": {
         "entry_id": {
-          "name": "Entry ID",
-          "description": "The admin_inbox config entry this item belongs to."
+          "name": "Admin Inbox instance",
+          "description": "Pick the Admin Inbox instance this item belongs to."
         },
         "item_id": {
           "name": "Item ID",
-          "description": "The pending item's id."
+          "description": "The pending item's id (shown in its Needs review to-do entry)."
         }
       }
     },
@@ -103,12 +103,12 @@
       "description": "Reject a pending review item, equivalent to deleting it from the Needs review to-do list.",
       "fields": {
         "entry_id": {
-          "name": "Entry ID",
-          "description": "The admin_inbox config entry this item belongs to."
+          "name": "Admin Inbox instance",
+          "description": "Pick the Admin Inbox instance this item belongs to."
         },
         "item_id": {
           "name": "Item ID",
-          "description": "The pending item's id."
+          "description": "The pending item's id (shown in its Needs review to-do entry)."
         }
       }
     },
@@ -117,8 +117,8 @@
       "description": "Manually trigger a reconciliation pass (retries stuck IMAP fetches, prunes old dedup-only records) instead of waiting for the next scheduled one.",
       "fields": {
         "entry_id": {
-          "name": "Entry ID",
-          "description": "The admin_inbox config entry to reconcile."
+          "name": "Admin Inbox instance",
+          "description": "Pick the Admin Inbox instance to reconcile."
         }
       }
     },
@@ -127,8 +127,8 @@
       "description": "Manually add a bill/renewal/appointment/expiry document (an image or PDF) to the review queue -- for mail Admin Inbox can't otherwise reach (e.g. no IMAP access and no Power Automate license). Requires an AI Task entity that supports image attachments (vision).",
       "fields": {
         "entry_id": {
-          "name": "Entry ID",
-          "description": "The admin_inbox config entry to add this item to."
+          "name": "Admin Inbox instance",
+          "description": "Pick which Admin Inbox instance to add this item to."
         },
         "file": {
           "name": "File",
