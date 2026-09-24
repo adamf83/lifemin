@@ -37,26 +37,33 @@ class FakeAITaskEntity(AITaskEntity):
 
     _attr_name = "Fake AI Task"
     _attr_unique_id = "fake_ai_task"
-    _attr_supported_features = AITaskEntityFeature.GENERATE_DATA
 
-    def __init__(self, responses: list) -> None:
+    def __init__(self, responses: list, *, supports_attachments: bool = False) -> None:
         self._responses = responses
         self.instructions_seen: list[str] = []
+        self.attachments_seen: list[list | None] = []
+        features = AITaskEntityFeature.GENERATE_DATA
+        if supports_attachments:
+            features |= AITaskEntityFeature.SUPPORT_ATTACHMENTS
+        self._attr_supported_features = features
 
     async def _async_generate_data(self, task, chat_log):
         self.instructions_seen.append(task.instructions)
+        self.attachments_seen.append(task.attachments)
         response = self._responses.pop(0)
         if isinstance(response, Exception):
             raise response
         return GenDataTaskResult(conversation_id=chat_log.conversation_id, data=response)
 
 
-async def async_setup_fake_ai_task(hass: HomeAssistant, responses: list) -> str:
+async def async_setup_fake_ai_task(
+    hass: HomeAssistant, responses: list, *, supports_attachments: bool = False
+) -> str:
     """Set up a real ai_task entity backed by FakeAITaskEntity, return its entity_id."""
     assert await async_setup_component(hass, "homeassistant", {})
     assert await async_setup_component(hass, "ai_task", {})
 
-    fake_entity = FakeAITaskEntity(responses)
+    fake_entity = FakeAITaskEntity(responses, supports_attachments=supports_attachments)
 
     async def async_setup_entry(hass: HomeAssistant, entry) -> bool:
         await hass.config_entries.async_forward_entry_setups(entry, ["ai_task"])
@@ -103,3 +110,24 @@ def add_mock_imap_entry(hass: HomeAssistant, entry_id: str = "imap_test_entry") 
     entry.add_to_hass(hass)
     entry.mock_state(hass, ConfigEntryState.LOADED)
     return entry
+
+
+async def async_create_local_media_file(
+    hass: HomeAssistant, *, subpath: str, content: bytes = b"fake image bytes"
+) -> str:
+    """Write a real file under the local media_source root; return its media_content_id.
+
+    Bypasses the file_upload HTTP layer (that's exercised separately in
+    test_upload_document.py) -- this is for tests that just need a
+    resolvable media-source:// identifier, e.g. extractor.py's attachments
+    passthrough.
+    """
+    assert await async_setup_component(hass, "media_source", {})
+
+    def _write() -> None:
+        path = pathlib.Path(hass.config.path("media", subpath))
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(content)
+
+    await hass.async_add_executor_job(_write)
+    return f"media-source://media_source/local/{subpath}"

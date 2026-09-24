@@ -21,5 +21,19 @@
         "default": "mdi:email-search-outline"
       }
     }
+  },
+  "services": {
+    "confirm_item": {
+      "service": "mdi:check-circle-outline"
+    },
+    "reject_item": {
+      "service": "mdi:close-circle-outline"
+    },
+    "reconcile": {
+      "service": "mdi:refresh"
+    },
+    "upload_document": {
+      "service": "mdi:file-upload-outline"
+    }
   }
 }

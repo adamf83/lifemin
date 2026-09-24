@@ -230,3 +230,47 @@ def test_whitespace_normalized_quote_still_matches():
         data, _email("13", text), past_years=PAST_YEARS, future_years=FUTURE_YEARS
     )
     assert isinstance(result, ExtractedFields)
+
+
+def test_verify_source_quote_false_skips_verbatim_check():
+    """Attachment-sourced items (PLAN.md section 1b): the quote is the
+    model's own transcription of an image, so there's no independent text
+    to check it against -- verify_source_quote=False accepts a quote that
+    doesn't appear anywhere in raw_email.text (which is empty/notes-only
+    for an upload)."""
+    data = {
+        "kind": "bill",
+        "title": "t",
+        "counterparty": "c",
+        "due_date": "2026-10-01",
+        "confidence": 0.5,
+        "source_quote": "Amount due 42.00 GBP by 2026-10-01 (transcribed from image)",
+    }
+    result = validate_extraction(
+        data,
+        _email("14", ""),
+        past_years=PAST_YEARS,
+        future_years=FUTURE_YEARS,
+        verify_source_quote=False,
+    )
+    assert isinstance(result, ExtractedFields)
+
+
+def test_verify_source_quote_false_still_rejects_empty_quote():
+    data = {
+        "kind": "bill",
+        "title": "t",
+        "counterparty": "c",
+        "due_date": "2026-10-01",
+        "confidence": 0.5,
+        "source_quote": "   ",
+    }
+    result = validate_extraction(
+        data,
+        _email("15", ""),
+        past_years=PAST_YEARS,
+        future_years=FUTURE_YEARS,
+        verify_source_quote=False,
+    )
+    assert isinstance(result, ValidationRejection)
+    assert result.field == "source_quote"

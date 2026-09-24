@@ -14,7 +14,7 @@ from homeassistant.exceptions import HomeAssistantError
 from custom_components.admin_inbox.extractor import async_extract
 from custom_components.admin_inbox.models import ExtractionFailure, RawEmail
 
-from .conftest import async_setup_fake_ai_task, load_fixture_email
+from .conftest import async_create_local_media_file, async_setup_fake_ai_task, load_fixture_email
 
 
 async def test_extract_happy_path(hass):
@@ -69,3 +69,46 @@ async def test_extract_recovers_on_second_attempt(hass):
     result = await async_extract(hass, email, ai_task_entity_id=entity_id)
 
     assert result == good_response
+
+
+async def test_extract_passes_attachment_to_ai_task(hass):
+    media_content_id = await async_create_local_media_file(hass, subpath="admin_inbox/test/1.jpg")
+    email = RawEmail(
+        uid="1",
+        sender="",
+        subject="Manually uploaded document",
+        date="2026-09-01",
+        text="this is my electric bill",
+        attachment_media_content_ids=[media_content_id],
+    )
+    response = {
+        "kind": "bill",
+        "title": "Electric bill",
+        "counterparty": "Acme Energy",
+        "confidence": 0.9,
+        "source_quote": "Amount due 42.00 GBP",
+        "due_date": "2026-10-01",
+    }
+    entity_id = await async_setup_fake_ai_task(hass, [response], supports_attachments=True)
+
+    result = await async_extract(hass, email, ai_task_entity_id=entity_id)
+
+    assert result == response
+
+
+async def test_extract_fails_when_entity_lacks_attachment_support(hass):
+    media_content_id = await async_create_local_media_file(hass, subpath="admin_inbox/test/2.jpg")
+    email = RawEmail(
+        uid="1",
+        sender="",
+        subject="s",
+        date="d",
+        text="",
+        attachment_media_content_ids=[media_content_id],
+    )
+    # supports_attachments defaults to False: the entity can't take images.
+    entity_id = await async_setup_fake_ai_task(hass, [])
+
+    result = await async_extract(hass, email, ai_task_entity_id=entity_id)
+
+    assert isinstance(result, ExtractionFailure)

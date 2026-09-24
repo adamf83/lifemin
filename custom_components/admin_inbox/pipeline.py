@@ -9,6 +9,7 @@ from datetime import datetime, timedelta
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import issue_registry as ir
 from homeassistant.util import dt as dt_util
+from homeassistant.util.ulid import ulid_now
 
 from .const import (
     CONF_AI_TASK_ENTITY_ID,
@@ -63,11 +64,14 @@ class PipelineDiagnostics:
 class AdminInboxPipeline:
     """Drives a FetchRequest through every pipeline stage.
 
-    Two entry points share the same post-fetch pipeline
+    Three entry points share the same post-fetch pipeline
     (`_async_process_fetched`): a fresh `imap_content` event
-    (`async_handle_fetch_request`, which reserves a new placeholder item)
-    and reconciliation's retry of a stuck item
-    (`async_reconcile`, which reuses the existing placeholder).
+    (`async_handle_fetch_request`, which fetches the body then reserves a
+    new placeholder item), a webhook delivery or manual upload that already
+    has the body (`async_handle_pushed_email` /
+    `async_handle_uploaded_document`), and reconciliation's retry of a
+    stuck IMAP-sourced item (`async_reconcile`, which reuses the existing
+    placeholder).
     """
 
     def __init__(
@@ -110,6 +114,43 @@ class AdminInboxPipeline:
         item = self.store.reserve_pending_fetch(request.uid)
         self._push_update()
         await self._async_process_fetched(item, request, raw_email)
+
+    async def async_handle_uploaded_document(
+        self, *, media_content_id: str, sender: str, subject: str, notes: str
+    ) -> None:
+        """admin_inbox.upload_document service path: a manually uploaded
+        image/PDF, for mailboxes reachable by neither IMAP nor a webhook
+        automation (e.g. no Power Automate license). See PLAN.md section 1b.
+
+        Every upload is a distinct, user-initiated item: there's no stable
+        upstream id to dedup on, so no dedup gate here, and prefiltering
+        would be actively wrong (the user explicitly chose to upload this
+        one document). The content-hash merge is also skipped -- it exists
+        to catch "the same email arrived under two uids", which doesn't
+        apply here, and would otherwise risk merging two different
+        image uploads that both happen to have empty/identical notes text.
+        """
+        uid = f"upload-{ulid_now()}"
+        item = self.store.reserve_pending_fetch(uid)
+        self._push_update()
+
+        raw_email = RawEmail(
+            uid=uid,
+            sender=sender,
+            subject=subject,
+            date=dt_util.now().date().isoformat(),
+            text=notes,
+            attachment_media_content_ids=[media_content_id],
+        )
+        request = FetchRequest(entry_id=self.entry.entry_id, uid=uid)
+        await self._async_process_fetched(
+            item,
+            request,
+            raw_email,
+            skip_prefilter=True,
+            check_content_hash=False,
+            verify_source_quote=False,
+        )
 
     async def async_reconcile(self) -> None:
         """Retry items stuck in pending_fetch/fetch_failed (mitigates flaky IMAP push).
@@ -159,29 +200,43 @@ class AdminInboxPipeline:
         await self._async_process_fetched(item, request, raw_email)
 
     async def _async_process_fetched(
-        self, item: StoredItem, request: FetchRequest, raw_email: RawEmail
+        self,
+        item: StoredItem,
+        request: FetchRequest,
+        raw_email: RawEmail,
+        *,
+        skip_prefilter: bool = False,
+        check_content_hash: bool = True,
+        verify_source_quote: bool = True,
     ) -> None:
-        chash = content_hash(raw_email.text)
-        existing = self.store.find_by_content_hash(chash)
-        if existing is not None and existing.id != item.id:
-            self.store.merge_uid_into(existing, request.uid)
-            self.store.delete_item(item.id)
-            self._push_update()
-            return
+        if check_content_hash:
+            chash = content_hash(raw_email.text)
+            existing = self.store.find_by_content_hash(chash)
+            if existing is not None and existing.id != item.id:
+                self.store.merge_uid_into(existing, request.uid)
+                self.store.delete_item(item.id)
+                self._push_update()
+                return
+        else:
+            # Uploads: not comparable via body text (see
+            # async_handle_uploaded_document), so key on something unique
+            # to this specific upload instead.
+            chash = content_hash(request.uid)
 
-        rejection = apply_prefilter(
-            raw_email,
-            sender_allowlist=self._options().get(CONF_SENDER_ALLOWLIST, []),
-            keywords=self._options().get(CONF_KEYWORDS, []),
-        )
-        if rejection is not None:
-            self.diagnostics.prefiltered += 1
-            # Hard filter: not stored anywhere, not even as a dedup-only
-            # record, per PLAN.md section 4.4. A duplicate imap_content
-            # event for the same uid will simply be prefiltered again.
-            self.store.delete_item(item.id)
-            self._push_update()
-            return
+        if not skip_prefilter:
+            rejection = apply_prefilter(
+                raw_email,
+                sender_allowlist=self._options().get(CONF_SENDER_ALLOWLIST, []),
+                keywords=self._options().get(CONF_KEYWORDS, []),
+            )
+            if rejection is not None:
+                self.diagnostics.prefiltered += 1
+                # Hard filter: not stored anywhere, not even as a dedup-only
+                # record, per PLAN.md section 4.4. A duplicate imap_content
+                # event for the same uid will simply be prefiltered again.
+                self.store.delete_item(item.id)
+                self._push_update()
+                return
 
         ai_task_entity_id = self._options().get(CONF_AI_TASK_ENTITY_ID) or self.entry.data.get(
             CONF_AI_TASK_ENTITY_ID
@@ -211,7 +266,11 @@ class AdminInboxPipeline:
             CONF_DUE_DATE_FUTURE_YEARS, DEFAULT_DUE_DATE_FUTURE_YEARS
         )
         validated = validate_extraction(
-            extraction, raw_email, past_years=past_years, future_years=future_years
+            extraction,
+            raw_email,
+            past_years=past_years,
+            future_years=future_years,
+            verify_source_quote=verify_source_quote,
         )
         if isinstance(validated, ValidationRejection):
             reason = f"{validated.field}:{validated.reason}"

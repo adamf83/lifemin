@@ -31,3 +31,32 @@ reconcile:
       example: "01J8Z..."
       selector:
         text:
+
+upload_document:
+  fields:
+    entry_id:
+      required: true
+      example: "01J8Z..."
+      selector:
+        text:
+    file:
+      required: true
+      selector:
+        file:
+          accept: "image/*,.pdf,application/pdf"
+    sender:
+      required: false
+      example: "British Gas"
+      selector:
+        text:
+    subject:
+      required: false
+      example: "Energy bill"
+      selector:
+        text:
+    notes:
+      required: false
+      example: "Found this in the post"
+      selector:
+        text:
+          multiline: true
